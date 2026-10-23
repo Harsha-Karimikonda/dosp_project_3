@@ -8,9 +8,10 @@ An Erlang actor-model implementation of the **Pastry** peer-to-peer routing subs
 
 ## Team Members
 
-| Name | GitHub |
-| :--- | :--- |
-| Harsha Karimikonda | `@Harsha-Karimikonda` |
+| Name | Email | UFID |
+| :--- | :--- | :--- |
+| Harsha Karimikonda | hkarimkonda@ufl.edu | 50966091 |
+| Venkatesh Gollepalli | ve.gollepalli@ufl.edu | 24690032 |
 
 ---
 
