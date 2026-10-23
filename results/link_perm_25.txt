@@ -17,21 +17,23 @@ Sending requests (1 request/second per peer)...
 Nodes                 : 1000
 Requests per node     : 8
 Requests completed    : 8000 (delivered 8000, timed out 0)
-Request phase         : 8.17 s
+Request phase         : 8.01 s
 log16(N)              : 2.491
 Max hops              : 4
-Hop distribution      : 0:5  1:334  2:3393  3:4227  4:41
-Misdelivered (verify) : 5
+Hop distribution      : 0:13  1:342  2:3362  3:4236  4:47
+Misdelivered (verify) : 0
 ---- failure model ----
 Nodes killed          : 0 (alive 1000)
 Links failed          : 250
 Delivery success      : 100.00 % (8000/8000 active quota)
-Re-routes (ack t/o)   : 80
-Repairs triggered     : 78
+Re-routes (ack t/o)   : 0
+Link detours          : 115
+Repairs triggered     : 0
 Routing loops         : 0
 Dropped (hop limit)   : 0
-Gets found/not found  : 3091 / 980
+Gets found/not found  : 2987 / 1031
 Corrupt values (gets) : 0
+Stale reads (gets)    : 0
 Data lost (gets)      : 0
 =========================================
-Average number of hops: 2.4956
+Average number of hops: 2.4952

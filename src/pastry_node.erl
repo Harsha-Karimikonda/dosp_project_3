@@ -100,11 +100,18 @@ handle_info({p2p, From, Payload}, St) ->
 handle_info(join_alone, St) ->
     {noreply, join_done(St)};
 
-handle_info({ack_timeout, Ref}, St = #st{pending = P}) ->
+handle_info({ack_timeout, Ref}, St = #st{pending = P, dead_links = DL}) ->
     case maps:take(Ref, P) of
-        {{Msg, Key, Hops, Path, Next, _}, P2} ->
+        {{Msg, Key, Hops, Path, Next = {_, NPid, _}, _}, P2} ->
             counter(St, reroutes),
-            St2 = node_failed(Next, St#st{pending = P2}),
+            St2 = case maps:is_key(NPid, DL) of
+                      true ->
+                          %% Link failure to NPid (node itself has not crashed):
+                          %% keep NPid in ring state and detour around dead link.
+                          St#st{pending = P2};
+                      false ->
+                          node_failed(Next, St#st{pending = P2})
+                  end,
             {noreply, do_route(Msg, Key, Hops, Path, St2)};
         error ->
             {noreply, St}
@@ -209,7 +216,7 @@ p2p(_From, {hop_ack, Ref}, St = #st{pending = P}) ->
 p2p(_From, {direct, Msg}, St = #st{app = App, app_st = AS}) ->
     St#st{app_st = App:deliver(Msg, undefined, #{direct => true}, AS)};
 p2p(_From, {relay, To, Payload}, St) ->
-    xmit(To, Payload, St),
+    xmit_direct(To, Payload, St),
     St;
 
 %% ---- State repair (bonus) -------------------------------------------
@@ -266,7 +273,7 @@ do_route(Msg, Key, Hops, Path, St = #st{ps = PS, app = App, app_st = AS}) ->
         true -> counter(St, loops);
         false -> ok
     end,
-    case pastry_state:next_hop(Key, PS) of
+    case choose_hop(Key, Path, St) of
         deliver ->
             St#st{app_st = App:deliver(Msg, Key, #{hops => Hops}, AS)};
         {forward, Next} ->
@@ -275,6 +282,30 @@ do_route(Msg, Key, Hops, Path, St = #st{ps = PS, app = App, app_st = AS}) ->
                     forward_route(Next2, Msg2, Key, Hops, Path, SelfId, St#st{app_st = AS2});
                 {stop, AS2} ->
                     St#st{app_st = AS2}
+            end
+    end.
+
+%% Choose next hop, detouring through a live reachable peer if the direct
+%% link to the ideal next hop has failed.
+choose_hop(Key, Path, St = #st{ps = PS, dead_links = DL}) ->
+    case pastry_state:next_hop(Key, PS) of
+        deliver ->
+            deliver;
+        {forward, Next = {NId, NPid, _}} ->
+            case (not maps:is_key(NPid, DL)) andalso (not lists:member(NId, Path)) of
+                true ->
+                    {forward, Next};
+                false ->
+                    %% Direct link to Next is down (or Next already visited):
+                    %% detour via the live reachable peer numerically closest to Key.
+                    counter(St, detours),
+                    Cands = [N || N = {I, P, _} <- pastry_state:all_nodes(PS),
+                                  not maps:is_key(P, DL),
+                                  not lists:member(I, Path)],
+                    case Cands of
+                        [] -> deliver;
+                        _  -> {forward, pastry_state:closest(Key, Cands)}
+                    end
             end
     end.
 
@@ -380,8 +411,10 @@ xmit_direct(Pid, Payload, St = #st{ps = PS, dead_links = DL}) ->
             Live = [P || {_, P, _} <- pastry_state:all_nodes(PS),
                          P =/= Pid, not maps:is_key(P, DL)],
             case Live of
-                [Relay | _] -> xmit(Relay, {relay, Pid, Payload}, St);
-                [] -> ok
+                [] -> ok;
+                _  ->
+                    Relay = lists:nth(rand:uniform(length(Live)), Live),
+                    xmit(Relay, {relay, Pid, Payload}, St)
             end
     end.
 

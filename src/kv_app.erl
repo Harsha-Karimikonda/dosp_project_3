@@ -68,22 +68,24 @@ issue_request(S = #{self := {MyId, _, _}, keys := K, timeout := TO,
 %% Pastry application callbacks
 %% ---------------------------------------------------------------------
 
-%% Owner of the key: store the value and acknowledge.
+%% Owner of the key: store the versioned value and acknowledge.
 deliver({kv_put, Key, Value, Origin, ReqId}, Key, #{hops := H}, S = #{store := St}) ->
-    replicate(Key, Value, replica_targets(S)),
-    reply(S, Origin, {kv_reply, ReqId, ok, H, my_id(S)}),
-    S#{store := St#{Key => Value}};
+    Ver = erlang:unique_integer([monotonic, positive]),
+    Entry = {Ver, Value},
+    replicate(Key, Entry, replica_targets(S)),
+    reply(S, Origin, {kv_reply, ReqId, {put_ok, Ver, Value}, H, my_id(S)}),
+    S#{store := put_versioned(Key, Entry, St)};
 %% Owner of the key: look the value up and answer the requester directly.
 deliver({kv_get, Key, Origin, ReqId}, Key, #{hops := H}, S = #{store := St}) ->
     Result = case maps:find(Key, St) of
-                 {ok, V} -> {ok, V};
+                 {ok, {Ver, V}} -> {ok, Ver, V};
                  error -> not_found
              end,
     reply(S, Origin, {kv_reply, ReqId, Result, H, my_id(S)}),
     S;
 %% Replica pushed by a key owner (bonus: survives owner failure).
-deliver({kv_replica, Key, Value}, _, _, S = #{store := St}) ->
-    S#{store := St#{Key => Value}};
+deliver({kv_replica, Key, Entry}, _, _, S = #{store := St}) ->
+    S#{store := put_versioned(Key, Entry, St)};
 %% Reply at the requesting node.
 deliver({kv_reply, ReqId, Result, Hops, Owner}, _, _, S = #{outstanding := O}) ->
     case maps:take(ReqId, O) of
@@ -124,9 +126,15 @@ new_leafs({Sm, La}, S = #{replicas := Rep, store := St}) ->
 reply(_S, Origin, Msg) ->
     pastry_node:send(self(), Msg, Origin).
 
-replicate(Key, Value, Targets) ->
-    [pastry_node:send(self(), {kv_replica, Key, Value}, P) || P <- Targets],
+replicate(Key, Entry, Targets) ->
+    [pastry_node:send(self(), {kv_replica, Key, Entry}, P) || P <- Targets],
     ok.
+
+put_versioned(Key, Entry = {Ver, _}, St) ->
+    case maps:find(Key, St) of
+        {ok, {OldVer, _}} when OldVer > Ver -> St;
+        _ -> St#{Key => Entry}
+    end.
 
 replica_targets(#{replicas := 0}) -> [];
 replica_targets(#{replicas := Rep, smaller := Sm, larger := La}) ->

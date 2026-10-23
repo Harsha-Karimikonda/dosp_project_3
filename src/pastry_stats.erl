@@ -21,7 +21,9 @@
     misdelivered = 0,
     put_values = #{},     % Key => #{Value => true}
     put_acked = #{},      % Key => time a put was first acknowledged
-    gets_found = 0, gets_nf = 0, data_lost = 0, corrupt_values = 0,
+    acked_vers = #{},     % Key => [{AckTimeMs, Ver}]
+    gets_found = 0, gets_nf = 0, data_lost = 0,
+    corrupt_values = 0, stale_reads = 0,
     counters = #{}
 }).
 
@@ -79,14 +81,24 @@ result(S, Pid, Type, Key, Result, Hops, Owner, IssuedAt) ->
             data(S3, Type, Key, Result, IssuedAt)
     end.
 
-data(S, put, Key, ok, _IssuedAt) ->
+data(S, put, Key, {put_ok, Ver, _}, _IssuedAt) ->
     Now = erlang:monotonic_time(millisecond),
-    S#s{put_acked = maps:update_with(Key, fun(T) -> T end, Now, S#s.put_acked)};
-data(S, get, Key, {ok, V}, _) ->
+    AV = S#s.acked_vers,
+    Old = maps:get(Key, AV, []),
+    S#s{put_acked = maps:update_with(Key, fun(T) -> T end, Now, S#s.put_acked),
+        acked_vers = AV#{Key => [{Now, Ver} | Old]}};
+data(S, get, Key, {ok, ReadVer, V}, IssuedAt) ->
     Valid = maps:is_key(V, maps:get(Key, S#s.put_values, #{})),
     Corrupt = case Valid of true -> 0; false -> 1 end,
+    Prior = [Ver || {AckAt, Ver} <- maps:get(Key, S#s.acked_vers, []),
+                    AckAt < IssuedAt],
+    Stale = case Prior =/= [] andalso ReadVer < lists:max(Prior) of
+                true -> 1;
+                false -> 0
+            end,
     S#s{gets_found = S#s.gets_found + 1,
-        corrupt_values = S#s.corrupt_values + Corrupt};
+        corrupt_values = S#s.corrupt_values + Corrupt,
+        stale_reads = S#s.stale_reads + Stale};
 data(S, get, Key, not_found, IssuedAt) ->
     Lost = case maps:find(Key, S#s.put_acked) of
                {ok, T} when T < IssuedAt -> 1;   % stored earlier, now missing
@@ -141,4 +153,5 @@ report(S) ->
       killed => S#s.killed, alive => S#s.alive,
       gets_found => S#s.gets_found, gets_nf => S#s.gets_nf,
       data_lost => S#s.data_lost, corrupt_values => S#s.corrupt_values,
+      stale_reads => S#s.stale_reads,
       counters => S#s.counters}.

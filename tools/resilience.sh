@@ -12,7 +12,7 @@ run() {
   local name=$1; shift
   echo "=== $name: ./project3 $N $R --verify $* ==="
   ./project3 "$N" "$R" --verify "$@" | tee "$OUT/$name.txt" | \
-    grep -E "Delivery success|Average number|Data lost|Corrupt values|Routing loops|Re-routes|Repairs|Nodes killed|Links failed|Misdelivered"
+    grep -E "Delivery success|Average number|Data lost|Corrupt values|Stale reads|Routing loops|Re-routes|Link detours|Repairs|Nodes killed|Links failed|Misdelivered"
 }
 
 run baseline

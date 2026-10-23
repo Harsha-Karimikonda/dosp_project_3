@@ -171,12 +171,14 @@ print_report(N, R, Rep, Secs, Opts) ->
                       [case Done of 0 -> 100.0; _ -> 100 * Ok / Done end,
                        Ok, maps:get(active_quota, Rep)]),
             io:format("Re-routes (ack t/o)   : ~p~n", [maps:get(reroutes, C, 0)]),
+            io:format("Link detours          : ~p~n", [maps:get(detours, C, 0)]),
             io:format("Repairs triggered     : ~p~n", [maps:get(repairs, C, 0)]),
             io:format("Routing loops         : ~p~n", [maps:get(loops, C, 0)]),
             io:format("Dropped (hop limit)   : ~p~n", [maps:get(dropped, C, 0)]),
             io:format("Gets found/not found  : ~p / ~p~n",
                       [maps:get(gets_found, Rep), maps:get(gets_nf, Rep)]),
             io:format("Corrupt values (gets) : ~p~n", [maps:get(corrupt_values, Rep)]),
+            io:format("Stale reads (gets)    : ~p~n", [maps:get(stale_reads, Rep)]),
             io:format("Data lost (gets)      : ~p~n", [maps:get(data_lost, Rep)]);
         false -> ok
     end,

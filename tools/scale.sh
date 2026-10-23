@@ -14,6 +14,8 @@ run_scale() {
 run_scale 100   3 --verify
 run_scale 1000  8 --verify
 run_scale 10000 3 --verify
-run_scale 25000 2
-run_scale 50000 2
+run_scale 25000  2
+run_scale 50000  2
+run_scale 100000 2
+run_scale 200000 2
 
