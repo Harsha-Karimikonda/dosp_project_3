@@ -1,7 +1,4 @@
-%% @doc Pure data-structure operations on a Pastry node's state:
-%% leaf set, routing table, neighborhood set and the routing decision
-%% (Table 1 / Section 2.2 of the Pastry paper). No processes here, so
-%% everything is unit-testable.
+%% Pure operations on Pastry node state (leaf set, routing table, neighborhood set, routing).
 -module(pastry_state).
 -include("pastry.hrl").
 
@@ -18,19 +15,12 @@ smaller(#pst{smaller = S}) -> S.
 larger(#pst{larger = L}) -> L.
 neighbors(#pst{nbr = N}) -> N.
 
-%% ---------------------------------------------------------------------
-%% Insertion
-%% ---------------------------------------------------------------------
-
-%% @doc Insert a list of nodes. Returns {State, LeafSetChanged}.
 add_all(Nodes, PS) ->
     lists:foldl(fun(N, {P, Ch}) ->
                         {P2, C2} = add(N, P),
                         {P2, Ch orelse C2}
                 end, {PS, false}, Nodes).
 
-%% @doc Insert a single node into leaf set, routing table and neighborhood
-%% set wherever it fits. Returns {State, LeafSetChanged}.
 add({Id, _, _}, PS = #pst{self = {Id, _, _}}) ->
     {PS, false};
 add(N, PS = #pst{self = {S, _, _}, smaller = Sm, larger = La}) ->
@@ -55,7 +45,6 @@ add_rt(N = {Id, _, P}, #pst{self = {S, _, SP}, rt = RT}) ->
         error -> RT#{Slot => N};
         {ok, {Id, _, _}} -> RT;
         {ok, {_, _, OP}} ->
-            %% Locality: keep the entry that is closer in the proximity space.
             case proximity(SP, P) < proximity(SP, OP) of
                 true  -> RT#{Slot => N};
                 false -> RT
@@ -71,12 +60,6 @@ add_nbr(N = {Id, _, P}, #pst{self = {_, _, SP}, nbr = Nb}) ->
             [X || {_, X} <- lists:sublist(Tagged, ?M_SIZE)]
     end.
 
-%% ---------------------------------------------------------------------
-%% Removal (failure handling)
-%% ---------------------------------------------------------------------
-
-%% @doc Remove a node by id. Returns {State, Info} where Info describes
-%% which structures lost an entry (used to drive repair).
 remove(Id, PS = #pst{smaller = Sm, larger = La, rt = RT, nbr = Nb}) ->
     Sm2 = lists:keydelete(Id, 1, Sm),
     La2 = lists:keydelete(Id, 1, La),
@@ -86,11 +69,6 @@ remove(Id, PS = #pst{smaller = Sm, larger = La, rt = RT, nbr = Nb}) ->
              rt => Slots, nbr => Nb2 =/= Nb},
     {PS#pst{smaller = Sm2, larger = La2, rt = maps:without(Slots, RT), nbr = Nb2}, Info}.
 
-%% ---------------------------------------------------------------------
-%% Queries
-%% ---------------------------------------------------------------------
-
-%% @doc Unique union of both leaf set halves.
 leaves(#pst{smaller = Sm, larger = La}) -> uniq(Sm ++ La).
 
 leaf_set(#pst{smaller = Sm, larger = La}) -> {Sm, La}.
@@ -109,19 +87,17 @@ find_pid(Pid, PS) ->
         []      -> error
     end.
 
-%% @doc True if Key falls within the range covered by the leaf set.
 in_leaf_range(Key, #pst{self = {S, _, _}, smaller = Sm, larger = La}) ->
     MaxCw  = case La of [] -> 0; _ -> pastry_id:cw(S, element(1, lists:last(La))) end,
     MaxCcw = case Sm of [] -> 0; _ -> pastry_id:cw(element(1, lists:last(Sm)), S) end,
     pastry_id:cw(S, Key) =< MaxCw orelse pastry_id:cw(Key, S) =< MaxCcw.
 
-%% @doc Pastry routing decision for Key: deliver | {forward, NodeRef}.
+%% Pastry routing decision (Section 2.2 / Table 1): leaf set, routing table, or rare-case fallback.
 next_hop(Key, #pst{self = {Key, _, _}}) ->
     deliver;
 next_hop(Key, PS = #pst{self = Self = {S, _, _}, rt = RT}) ->
     case in_leaf_range(Key, PS) of
         true ->
-            %% Key is covered by the leaf set: go to the numerically closest.
             case closest(Key, [Self | leaves(PS)]) of
                 {S, _, _} -> deliver;
                 N -> {forward, N}
@@ -134,8 +110,6 @@ next_hop(Key, PS = #pst{self = Self = {S, _, _}, rt = RT}) ->
             end
     end.
 
-%% Rare case: forward to any known node that shares at least as long a
-%% prefix with Key and is numerically closer to it than we are.
 rare_case(Key, L, PS = #pst{self = {S, _, _}}) ->
     DS = pastry_id:dist(S, Key),
     Cands = [N || N = {I, _, _} <- all_nodes(PS),
@@ -146,7 +120,6 @@ rare_case(Key, L, PS = #pst{self = {S, _, _}}) ->
         _  -> {forward, closest(Key, Cands)}
     end.
 
-%% @doc Node numerically closest to Key (ties broken by smaller id).
 closest(Key, [First | Rest]) ->
     {_, Best} = lists:foldl(
                   fun(N = {I, _, _}, {BD, B}) ->

@@ -1,8 +1,4 @@
-%% @doc Fault injector actor (bonus). During the request phase it
-%%   * kills a percentage of the peers (node failure: crash-stop), and/or
-%%   * fails links between peers and their routing state neighbours,
-%%     either temporarily (healed after 1-3 s) or permanently.
-%% Failures are spread uniformly over a time window.
+%% Fault injector actor: schedules random peer crashes and temporary/permanent link failures.
 -module(pastry_faults).
 
 -export([start/3]).

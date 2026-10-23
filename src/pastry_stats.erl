@@ -1,9 +1,4 @@
-%% @doc Statistics actor: collects one result per request and, once every
-%% peer has completed its requests, sends a report to the coordinator.
-%%
-%% In verify mode it also keeps the global set of live node ids (only for
-%% checking; it is never used for routing) and checks that every message
-%% was delivered at the node numerically closest to its key.
+%% Statistics actor: aggregates hop counts, delivery metrics, and ground-truth verification.
 -module(pastry_stats).
 -include("pastry.hrl").
 
@@ -12,16 +7,16 @@
 -record(s, {
     main, n, r, verify,
     registered = false,
-    expected,             % requests still expected (shrinks when nodes die)
+    expected,
     done = 0, ok = 0, timeouts = 0,
     sum_hops = 0, max_hops = 0, hist = #{},
-    reported = #{},       % Pid => results reported
+    reported = #{},
     alive = 0, killed = 0,
-    ring, nring,          % gb_sets of live ids / mirrored ids (verify)
+    ring, nring,
     misdelivered = 0,
-    put_values = #{},     % Key => #{Value => true}
-    put_acked = #{},      % Key => time a put was first acknowledged
-    acked_vers = #{},     % Key => [{AckTimeMs, Ver}]
+    put_values = #{},
+    put_acked = #{},
+    acked_vers = #{},
     gets_found = 0, gets_nf = 0, data_lost = 0,
     corrupt_values = 0, stale_reads = 0,
     counters = #{}
@@ -101,7 +96,7 @@ data(S, get, Key, {ok, ReadVer, V}, IssuedAt) ->
         stale_reads = S#s.stale_reads + Stale};
 data(S, get, Key, not_found, IssuedAt) ->
     Lost = case maps:find(Key, S#s.put_acked) of
-               {ok, T} when T < IssuedAt -> 1;   % stored earlier, now missing
+               {ok, T} when T < IssuedAt -> 1;
                _ -> 0
            end,
     S#s{gets_nf = S#s.gets_nf + 1, data_lost = S#s.data_lost + Lost};
@@ -129,7 +124,6 @@ verify_owner(S = #s{ring = Ring, nring = NRing}, Key, Owner) ->
     end.
 
 remove_from_ring(Pid, S) ->
-    %% The pid -> id mapping is only needed for verification.
     case get({id, Pid}) of
         undefined -> S;
         Id -> S#s{ring = gb_sets:delete_any(Id, S#s.ring),
@@ -138,8 +132,6 @@ remove_from_ring(Pid, S) ->
 
 check(S = #s{registered = true, done = D, expected = E}) when D >= E ->
     S#s.main ! {stats_done, report(S)};
-check(S = #s{registered = true}) ->
-    loop(S);
 check(S) ->
     loop(S).
 

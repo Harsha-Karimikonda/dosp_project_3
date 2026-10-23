@@ -1,17 +1,4 @@
-%% @doc Entry point:  project3 numNodes numRequests [options]
-%%
-%% Builds a Pastry overlay with numNodes peers (one actor each), then every
-%% peer issues numRequests key/value requests at 1 request/second. When all
-%% requests are done the average number of hops is printed.
-%%
-%% Options (bonus / debugging):
-%%   --verify            check every delivery reached the numerically closest node
-%%   --kill P            kill P% of the nodes during the request phase
-%%   --link-fail P       fail one link on P% of the nodes during the request phase
-%%   --link-mode M       temp (default, heals after 1-3 s) | perm
-%%   --replicas K        replicate each stored key on K leaf set members
-%%   --keys K            size of the key space (default 1000)
-%%   --timeout MS        per-request timeout in ms
+%% CLI entry point: project3 numNodes numRequests [options].
 -module(project3).
 -export([main/1]).
 
@@ -29,10 +16,6 @@ usage() ->
               "usage: project3 numNodes numRequests [--verify] [--kill P] "
               "[--link-fail P] [--link-mode temp|perm] [--replicas K] "
               "[--keys K] [--timeout MS]~n", []).
-
-%% ---------------------------------------------------------------------
-%% Argument parsing
-%% ---------------------------------------------------------------------
 
 parse([NS, RS | Rest]) ->
     try
@@ -69,10 +52,6 @@ opts([X | _], _) -> throw({bad_opt, X}).
 num(S) ->
     try list_to_float(S) catch _:_ -> float(list_to_integer(S)) end.
 
-%% ---------------------------------------------------------------------
-%% Simulation
-%% ---------------------------------------------------------------------
-
 run(N, R, Opts) ->
     #{verify := Verify, reliable := Rel} = Opts,
     io:format("Pastry: ~p nodes, ~p requests/node (b=4, |L|=16, |M|=16)~s~n",
@@ -95,8 +74,6 @@ run(N, R, Opts) ->
     end,
     halt(0).
 
-%% Nodes join one at a time; each new node bootstraps from the node that
-%% is closest in the proximity space among a random sample of joined nodes.
 join_all(N, Stats, AppArgs, Rel) ->
     join_all(1, N, Stats, AppArgs, Rel, #{}, max(1, N div 10)).
 

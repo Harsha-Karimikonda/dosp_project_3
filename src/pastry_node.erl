@@ -1,14 +1,4 @@
-%% @doc One Pastry peer = one Erlang actor (gen_server).
-%%
-%% Implements the Pastry API of Section 2.3:
-%%   pastryInit  -> start/1   (creates the node and joins the overlay)
-%%   route       -> route/3
-%%   send        -> send/3
-%% and invokes the application callbacks deliver/forward/new_leafs
-%% (see pastry_app).
-%%
-%% Node-to-node traffic is wrapped as {p2p, FromPid, Payload} so that the
-%% (bonus) link failure model can drop messages on failed links.
+%% Pastry peer actor (gen_server) implementing pastryInit, route, send, join, and repair.
 -module(pastry_node).
 -behaviour(gen_server).
 -include("pastry.hrl").
@@ -17,41 +7,28 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--define(ACK_TIMEOUT, 300).      % per-hop ack timeout (reliable mode)
--define(SUSPECT_TTL, 5000).     % how long a failed node is ignored
--define(MAINT_INTERVAL, 2000).  % leaf set maintenance period
--define(MAX_HOPS, 64).          % safety bound against routing loops
+-define(ACK_TIMEOUT, 300).
+-define(SUSPECT_TTL, 5000).
+-define(MAINT_INTERVAL, 2000).
+-define(MAX_HOPS, 64).
 
 -record(st, {
-    ps,                    % #pst{} Pastry state
-    app, app_st,           % application module + state
-    main, stats,           % coordinator and statistics actors
-    reliable = false,      % failure detection / repair enabled (bonus)
-    join,                  % undefined | {collect, Map} | {acks, N}
-    pending = #{},         % AckRef => {Msg, Key, Hops, Next, TRef}
-    dead_links = #{},      % Pid => true   (failed links, bonus)
-    suspects = #{},        % Id => ExpiryMs (recently failed nodes)
-    monitors = #{}         % Pid => MonitorRef (leaf set keep-alive)
+    ps,
+    app, app_st,
+    main, stats,
+    reliable = false,
+    join,
+    pending = #{},
+    dead_links = #{},
+    suspects = #{},
+    monitors = #{}
 }).
 
-%% =====================================================================
-%% Pastry API
-%% =====================================================================
-
-%% @doc pastryInit: start a node and join the overlay through Bootstrap
-%% (none for the first node). When the join is complete the node sends
-%% {joined, Pid, NodeId} to Cfg.main.
 start(Cfg) -> gen_server:start(?MODULE, Cfg, [{hibernate_after, 500}]).
 
-%% @doc route(msg, key): route Msg to the node numerically closest to Key.
 route(Node, Msg, Key) -> gen_server:cast(Node, {api_route, Msg, Key}).
 
-%% @doc send(msg, node): send Msg directly to the node with pid To.
 send(Node, Msg, To) -> gen_server:cast(Node, {api_send, Msg, To}).
-
-%% =====================================================================
-%% gen_server
-%% =====================================================================
 
 init(#{index := I, pos := Pos, app := App, app_args := AppArgs,
        bootstrap := Boot, main := Main, stats := Stats} = Cfg) ->
@@ -93,47 +70,37 @@ handle_cast(_, St) ->
 
 handle_info({p2p, From, Payload}, St) ->
     case maps:is_key(From, St#st.dead_links) of
-        true  -> {noreply, St};                 % link is down: drop
+        true  -> {noreply, St};
         false -> {noreply, p2p(From, Payload, St)}
     end;
-
 handle_info(join_alone, St) ->
     {noreply, join_done(St)};
-
 handle_info({ack_timeout, Ref}, St = #st{pending = P, dead_links = DL}) ->
     case maps:take(Ref, P) of
         {{Msg, Key, Hops, Path, Next = {_, NPid, _}, _}, P2} ->
             counter(St, reroutes),
             St2 = case maps:is_key(NPid, DL) of
-                      true ->
-                          %% Link failure to NPid (node itself has not crashed):
-                          %% keep NPid in ring state and detour around dead link.
-                          St#st{pending = P2};
-                      false ->
-                          node_failed(Next, St#st{pending = P2})
+                      true  -> St#st{pending = P2};
+                      false -> node_failed(Next, St#st{pending = P2})
                   end,
             {noreply, do_route(Msg, Key, Hops, Path, St2)};
         error ->
             {noreply, St}
     end;
-
 handle_info({'DOWN', _MRef, process, Pid, _Reason}, St) ->
     St1 = St#st{monitors = maps:remove(Pid, St#st.monitors)},
     case pastry_state:find_pid(Pid, St1#st.ps) of
         {ok, Node} -> {noreply, node_failed(Node, St1)};
         error      -> {noreply, St1}
     end;
-
 handle_info({fail_link, Peer, Dur}, St) ->
     case Dur of
         infinity -> ok;
         _ -> erlang:send_after(Dur, self(), {heal_link, Peer})
     end,
     {noreply, St#st{dead_links = (St#st.dead_links)#{Peer => true}}};
-
 handle_info({heal_link, Peer}, St) ->
     {noreply, St#st{dead_links = maps:remove(Peer, St#st.dead_links)}};
-
 handle_info(maint, St = #st{ps = PS}) ->
     erlang:send_after(?MAINT_INTERVAL, self(), maint),
     Now = now_ms(),
@@ -144,22 +111,13 @@ handle_info(maint, St = #st{ps = PS}) ->
     St2 = St#st{suspects = Sus},
     [xmit(P, leaf_req, St2) || {_, P, _} <- lists:usort(Targets)],
     {noreply, St2};
-
 handle_info(Other, St = #st{app = App, app_st = AS}) ->
     {noreply, St#st{app_st = App:handle_info(Other, AS)}}.
 
 terminate(_Reason, _St) -> ok.
 code_change(_Old, St, _Extra) -> {ok, St}.
 
-%% =====================================================================
-%% Peer-to-peer protocol
-%% =====================================================================
-
-%% ---- Join (Section 2.4) ---------------------------------------------
-%% Each node on the route of the join message towards X's id sends X the
-%% routing table rows it can contribute (plus itself). The bootstrap node A
-%% also sends its neighborhood set, and the final node Z (numerically
-%% closest to X) also sends its leaf set.
+%% Peer-to-peer message dispatch (join, routing, direct messages, and state repair).
 p2p(_From, {join_req, X = {XId, XPid, _}, Hop}, St = #st{ps = PS}) ->
     Self = {S, _, _} = pastry_state:self_node(PS),
     Rows = pastry_state:rows_upto(pastry_id:shl(XId, S), PS),
@@ -175,7 +133,6 @@ p2p(_From, {join_req, X = {XId, XPid, _}, Hop}, St = #st{ps = PS}) ->
             xmit(XPid, {join_state, Hop, Base ++ pastry_state:leaves(PS), true}, St)
     end,
     St;
-
 p2p(_From, {join_state, Hop, Nodes, Final}, St = #st{join = {collect, J}}) ->
     #{got := G, nodes := Ns, expected := E} = J,
     E2 = case Final of true -> Hop + 1; false -> E end,
@@ -184,27 +141,21 @@ p2p(_From, {join_state, Hop, Nodes, Final}, St = #st{join = {collect, J}}) ->
         true  -> finish_join(J2, St);
         false -> St#st{join = {collect, J2}}
     end;
-
 p2p(_From, announce_ack, St = #st{join = {acks, N}}) ->
     case N - 1 of
         0 -> join_done(St);
         N2 -> St#st{join = {acks, N2}}
     end;
-
-%% A newly joined node announces itself to every node in its state.
 p2p(_From, {announce, X = {_, XPid, _}}, St) ->
     St2 = add_nodes([X], St),
     xmit(XPid, announce_ack, St2),
     St2;
-
-%% ---- Routing --------------------------------------------------------
 p2p(From, {route, Msg, Key, Hops, Path, AckRef}, St) ->
     case AckRef of
         none -> ok;
         _ -> xmit(From, {hop_ack, AckRef}, St)
     end,
     do_route(Msg, Key, Hops, Path, St);
-
 p2p(_From, {hop_ack, Ref}, St = #st{pending = P}) ->
     case maps:take(Ref, P) of
         {{_, _, _, _, _, TRef}, P2} ->
@@ -212,14 +163,11 @@ p2p(_From, {hop_ack, Ref}, St = #st{pending = P}) ->
             St#st{pending = P2};
         error -> St
     end;
-
 p2p(_From, {direct, Msg}, St = #st{app = App, app_st = AS}) ->
     St#st{app_st = App:deliver(Msg, undefined, #{direct => true}, AS)};
 p2p(_From, {relay, To, Payload}, St) ->
     xmit_direct(To, Payload, St),
     St;
-
-%% ---- State repair (bonus) -------------------------------------------
 p2p(From, leaf_req, St = #st{ps = PS}) ->
     xmit(From, {leaf_resp, [pastry_state:self_node(PS) | pastry_state:leaves(PS)]}, St),
     St;
@@ -239,13 +187,8 @@ p2p(From, nbr_req, St = #st{ps = PS}) ->
     St;
 p2p(_From, {nbr_resp, Nodes}, St) ->
     add_nodes(Nodes, St);
-
 p2p(_From, _Unknown, St) ->
     St.
-
-%% =====================================================================
-%% Internals
-%% =====================================================================
 
 finish_join(#{nodes := Nodes}, St = #st{ps = PS0}) ->
     {PS, _} = pastry_state:add_all(Nodes, PS0),
@@ -263,7 +206,6 @@ join_done(St = #st{ps = PS, main = Main}) ->
     Main ! {joined, self(), Id},
     leafs_changed(St#st{join = undefined}).
 
-%% Core routing step. Hops = number of hops travelled so far.
 do_route(_Msg, _Key, Hops, _Path, St) when Hops > ?MAX_HOPS ->
     counter(St, dropped),
     St;
@@ -285,8 +227,7 @@ do_route(Msg, Key, Hops, Path, St = #st{ps = PS, app = App, app_st = AS}) ->
             end
     end.
 
-%% Choose next hop, detouring through a live reachable peer if the direct
-%% link to the ideal next hop has failed.
+%% Detour around failed links using the closest reachable live peer not yet in Path.
 choose_hop(Key, Path, St = #st{ps = PS, dead_links = DL}) ->
     case pastry_state:next_hop(Key, PS) of
         deliver ->
@@ -296,8 +237,6 @@ choose_hop(Key, Path, St = #st{ps = PS, dead_links = DL}) ->
                 true ->
                     {forward, Next};
                 false ->
-                    %% Direct link to Next is down (or Next already visited):
-                    %% detour via the live reachable peer numerically closest to Key.
                     counter(St, detours),
                     Cands = [N || N = {I, P, _} <- pastry_state:all_nodes(PS),
                                   not maps:is_key(P, DL),
@@ -318,7 +257,6 @@ forward_route(Next = {_, NPid, _}, Msg, Key, Hops, Path, SelfId, St = #st{pendin
     xmit(NPid, {route, Msg, Key, Hops + 1, [SelfId | Path], Ref}, St),
     St#st{pending = P#{Ref => {Msg, Key, Hops, Path, Next, TRef}}}.
 
-%% Add nodes learned from peers (skipping recently failed ones).
 add_nodes(Nodes, St = #st{ps = PS, suspects = Sus}) ->
     Now = now_ms(),
     Fresh = [N || N = {I, _, _} <- Nodes, not is_suspect(I, Sus, Now)],
@@ -339,8 +277,6 @@ leafs_changed(St = #st{ps = PS, app = App, app_st = AS}) ->
     St2 = St#st{app_st = App:new_leafs(pastry_state:leaf_set(PS), AS)},
     ensure_monitors(St2).
 
-%% Keep-alive on leaf set members: in Erlang a process monitor plays the
-%% role of the paper's periodic keep-alive messages (crash detection).
 ensure_monitors(St = #st{reliable = false}) -> St;
 ensure_monitors(St = #st{ps = PS, monitors = M}) ->
     M2 = lists:foldl(fun({_, P, _}, Acc) ->
@@ -351,8 +287,6 @@ ensure_monitors(St = #st{ps = PS, monitors = M}) ->
                      end, M, pastry_state:leaves(PS)),
     St#st{monitors = M2}.
 
-%% A node was detected as failed (crash or unreachable link): remove it
-%% and start repairing the affected structures (Section 2.4).
 node_failed({Id, _, _}, St = #st{ps = PS}) ->
     {PS2, Info} = pastry_state:remove(Id, PS),
     St2 = St#st{ps = PS2, suspects = (St#st.suspects)#{Id => now_ms() + ?SUSPECT_TTL}},
@@ -370,11 +304,9 @@ node_failed({Id, _, _}, St = #st{ps = PS}) ->
 
 repair(Info, St = #st{ps = PS}) ->
     Sm = pastry_state:smaller(PS), La = pastry_state:larger(PS),
-    %% Leaf set: ask the farthest live leaf on the damaged side for its leaf set.
     LeafT = (case maps:get(smaller, Info) of true -> far(Sm, La); false -> [] end)
          ++ (case maps:get(larger, Info) of true -> far(La, Sm); false -> [] end),
     [xmit(P, leaf_req, St) || {_, P, _} <- lists:usort(LeafT)],
-    %% Routing table entry R[l][d]: ask the other entries of row l (or l+1).
     lists:foreach(
       fun({R, C}) ->
               Row = case pastry_state:row(R, PS) of
@@ -383,7 +315,6 @@ repair(Info, St = #st{ps = PS}) ->
                     end,
               [xmit(P, {rt_req, R, C}, St) || {_, P, _} <- Row]
       end, maps:get(rt, Info)),
-    %% Neighborhood set: ask the remaining members for theirs.
     case maps:get(nbr, Info) of
         true -> [xmit(P, nbr_req, St) || {_, P, _} <- pastry_state:neighbors(PS)];
         false -> ok
@@ -394,15 +325,12 @@ far([], []) -> [];
 far([], Other) -> [lists:last(Other)];
 far(Side, _) -> [lists:last(Side)].
 
-%% Transmit a peer-to-peer message, honouring failed links.
 xmit(Pid, Payload, #st{dead_links = DL}) ->
     case maps:is_key(Pid, DL) of
         true  -> ok;
         false -> Pid ! {p2p, self(), Payload}, ok
     end.
 
-%% Direct application send: if the direct link to Pid has failed, relay
-%% through a live leaf/neighbour whose link is up.
 xmit_direct(Pid, Payload, St = #st{ps = PS, dead_links = DL}) ->
     case maps:is_key(Pid, DL) of
         false ->
