@@ -1,0 +1,5 @@
+{
+  "terminal.integrated.env.osx": {
+    "PATH": "${env:HOME}/.local/bin:${env:HOME}/.erlang-env/bin:${env:PATH}"
+  }
+}
