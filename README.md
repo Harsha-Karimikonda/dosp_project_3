@@ -8,10 +8,9 @@ An Erlang actor-model implementation of the **Pastry** peer-to-peer routing subs
 
 ## Team Members
 
-| Name | UFID / GitHub |
+| Name | GitHub |
 | :--- | :--- |
 | Harsha Karimikonda | `@Harsha-Karimikonda` |
-| *(Add teammate if applicable)* | |
 
 ---
 
@@ -100,17 +99,17 @@ To run the full automated bonus resilience benchmark suite:
 
 ## Largest Network Managed & Scaling Results
 
-All experiments below were run on an 8-core Apple Silicon Mac (16 GB RAM, Erlang/OTP 29).
+All experiments below were run on an 8-core Apple Silicon Mac (16 GB RAM, Erlang/OTP 29), and the raw output logs are saved in [`results/scale_*.txt`](results/) (reproducible via `./tools/scale.sh`).
 
-| `numNodes` (`N`) | `numRequests` / node | Total Requests Delivered | Join Time (s) | Theoretical $\log_{16}(N)$ | **Measured Average Hops** | Max Hops | Misdelivered (`--verify`) | Peak Memory (RSS) |
-| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `100` | `3` | `300` | `0.03 s` | `1.661` | **`1.7233`** | `3` | `0` | `48 MB` |
-| `1,000` | `8` | `8,000` | `0.42 s` | `2.491` | **`2.4815`** | `4` | `0` | `140 MB` |
-| `10,000` | `3` | `30,000` | `6.39 s` | `3.322` | **`3.2395`** | `5` | `0` | `1.08 GB` |
-| `25,000` | `2` | `50,000` | `18.46 s` | `3.652` | **`3.5710`** | `5` | — | `1.45 GB` |
-| `50,000` | `2` | `100,000` | `41.02 s` | `3.902` | **`3.7547`** | `6` | — | `2.36 GB` |
-| `100,000` | `2` | `200,000` | `90.45 s` | `4.152` | **`3.9897`** | `6` | — | `4.34 GB` |
-| **`200,000`** | `2` | **`400,000`** | `205.96 s` | `4.402` | **`4.2738`** | `6` | — | `4.75 GB` |
+| `numNodes` (`N`) | `numRequests` / node | Total Requests Delivered | Join Time (s) | Theoretical $\log_{16}(N)$ | **Measured Average Hops** | Max Hops | Misdelivered (`--verify`) | Peak Memory (RSS) | Log File |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :--- |
+| `100` | `3` | `300` | `0.03 s` | `1.661` | **`1.6767`** | `3` | `0` | `131 MB` | [`scale_100.txt`](results/scale_100.txt) |
+| `1,000` | `8` | `8,000` | `0.44 s` | `2.491` | **`2.5004`** | `4` | `0` | `237 MB` | [`scale_1000.txt`](results/scale_1000.txt) |
+| `10,000` | `3` | `30,000` | `6.53 s` | `3.322` | **`3.2410`** | `5` | `0` | `1.10 GB` | [`scale_10000.txt`](results/scale_10000.txt) |
+| `25,000` | `2` | `50,000` | `18.93 s` | `3.652` | **`3.5614`** | `5` | — | `1.49 GB` | [`scale_25000.txt`](results/scale_25000.txt) |
+| `50,000` | `2` | `100,000` | `41.33 s` | `3.902` | **`3.7554`** | `6` | — | `2.49 GB` | [`scale_50000.txt`](results/scale_50000.txt) |
+| `100,000` | `2` | `200,000` | `90.45 s` | `4.152` | **`3.9897`** | `6` | — | `4.34 GB` | [`scale_100000.txt`](results/scale_100000.txt) |
+| **`200,000`** | `2` | **`400,000`** | `205.96 s` | `4.402` | **`4.2738`** | `6` | — | `4.75 GB` | [`scale_200000.txt`](results/scale_200000.txt) |
 
 - **Largest network tested:** **`200,000` concurrent peer actors** routing **`400,000` requests** with **100% delivery (0 timeouts)** and an average of **`4.2738` hops** (closely matching the theoretical $\log_{16}(200{,}000) \approx 4.402$).
 - Across all verified networks (`N = 2` up to `N = 10,000`), **`Misdelivered = 0`** — every single request landed at the exact live node numerically closest to the key on the $2^{128}$ ring.

@@ -48,13 +48,14 @@ handle_info(_Other, S) ->
     S.
 
 issue_request(S = #{self := {MyId, _, _}, keys := K, timeout := TO,
-                    outstanding := O, issued := I}) ->
+                    outstanding := O, issued := I, stats := Stats}) ->
     Key = pastry_id:hash("key-" ++ integer_to_list(rand:uniform(K))),
     ReqId = make_ref(),
     {Type, Msg} =
         case rand:uniform(2) of
             1 ->
                 Value = "value from " ++ pastry_id:short(MyId) ++ " #" ++ integer_to_list(I + 1),
+                Stats ! {kv_put_issued, Key, Value},
                 {put, {kv_put, Key, Value, self(), ReqId}};
             2 ->
                 {get, {kv_get, Key, self(), ReqId}}

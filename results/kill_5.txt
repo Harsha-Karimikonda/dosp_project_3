@@ -9,26 +9,29 @@ Pastry: 1000 nodes, 8 requests/node (b=4, |L|=16, |M|=16), failure handling ON
   joined 800/1000
   joined 900/1000
   joined 1000/1000
-Network built: 1000 nodes joined in 0.42 s
+Network built: 1000 nodes joined in 0.48 s
 Fault injection: kill 5.0% nodes, link failures on 0% nodes (temp) between 1000 and 4800 ms
 Sending requests (1 request/second per peer)...
 
 ================ Results ================
 Nodes                 : 1000
 Requests per node     : 8
-Requests completed    : 7746 (delivered 7745, timed out 1)
-Request phase         : 9.70 s
+Requests completed    : 7750 (delivered 7750, timed out 0)
+Request phase         : 8.28 s
 log16(N)              : 2.491
 Max hops              : 5
-Hop distribution      : 0:4  1:328  2:3222  3:4084  4:101  5:6
+Hop distribution      : 0:5  1:338  2:3309  3:3994  4:94  5:10
+Misdelivered (verify) : 0
 ---- failure model ----
 Nodes killed          : 50 (alive 950)
 Links failed          : 0
-Delivery success      : 99.99 %
-Re-routes (ack t/o)   : 329
-Repairs triggered     : 1298
+Delivery success      : 100.00 % (7750/7750 active quota)
+Re-routes (ack t/o)   : 348
+Repairs triggered     : 1267
+Routing loops         : 0
 Dropped (hop limit)   : 0
-Gets found/not found  : 2804 / 1021
+Gets found/not found  : 2902 / 1005
+Corrupt values (gets) : 0
 Data lost (gets)      : 0
 =========================================
-Average number of hops: 2.5123
+Average number of hops: 2.4986

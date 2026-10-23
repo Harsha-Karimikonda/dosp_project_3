@@ -19,8 +19,9 @@
     alive = 0, killed = 0,
     ring, nring,          % gb_sets of live ids / mirrored ids (verify)
     misdelivered = 0,
+    put_values = #{},     % Key => #{Value => true}
     put_acked = #{},      % Key => time a put was first acknowledged
-    gets_found = 0, gets_nf = 0, data_lost = 0,
+    gets_found = 0, gets_nf = 0, data_lost = 0, corrupt_values = 0,
     counters = #{}
 }).
 
@@ -44,6 +45,10 @@ loop(S) ->
                      false -> S
                  end,
             check(S2#s{registered = true, alive = length(Nodes)});
+        {kv_put_issued, Key, Value} ->
+            PV = S#s.put_values,
+            Set = maps:get(Key, PV, #{}),
+            loop(S#s{put_values = PV#{Key => Set#{Value => true}}});
         {kv_result, Pid, Type, Key, Result, Hops, Owner, IssuedAt} ->
             check(result(S, Pid, Type, Key, Result, Hops, Owner, IssuedAt));
         {counter, Name} ->
@@ -77,8 +82,11 @@ result(S, Pid, Type, Key, Result, Hops, Owner, IssuedAt) ->
 data(S, put, Key, ok, _IssuedAt) ->
     Now = erlang:monotonic_time(millisecond),
     S#s{put_acked = maps:update_with(Key, fun(T) -> T end, Now, S#s.put_acked)};
-data(S, get, _Key, {ok, _}, _) ->
-    S#s{gets_found = S#s.gets_found + 1};
+data(S, get, Key, {ok, V}, _) ->
+    Valid = maps:is_key(V, maps:get(Key, S#s.put_values, #{})),
+    Corrupt = case Valid of true -> 0; false -> 1 end,
+    S#s{gets_found = S#s.gets_found + 1,
+        corrupt_values = S#s.corrupt_values + Corrupt};
 data(S, get, Key, not_found, IssuedAt) ->
     Lost = case maps:find(Key, S#s.put_acked) of
                {ok, T} when T < IssuedAt -> 1;   % stored earlier, now missing
@@ -124,11 +132,13 @@ check(S) ->
     loop(S).
 
 report(S) ->
-    #{expected => S#s.n * S#s.r, done => S#s.done, ok => S#s.ok,
+    #{expected => S#s.n * S#s.r, active_quota => S#s.expected,
+      done => S#s.done, ok => S#s.ok,
       timeouts => S#s.timeouts,
       avg_hops => case S#s.ok of 0 -> 0.0; K -> S#s.sum_hops / K end,
       max_hops => S#s.max_hops, hist => S#s.hist,
       verify => S#s.verify, misdelivered => S#s.misdelivered,
       killed => S#s.killed, alive => S#s.alive,
       gets_found => S#s.gets_found, gets_nf => S#s.gets_nf,
-      data_lost => S#s.data_lost, counters => S#s.counters}.
+      data_lost => S#s.data_lost, corrupt_values => S#s.corrupt_values,
+      counters => S#s.counters}.

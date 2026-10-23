@@ -1,0 +1,42 @@
+Pastry: 50000 nodes, 2 requests/node (b=4, |L|=16, |M|=16)
+  joined 5000/50000
+  joined 10000/50000
+  joined 15000/50000
+  joined 20000/50000
+  joined 25000/50000
+  joined 30000/50000
+  joined 35000/50000
+  joined 40000/50000
+  joined 45000/50000
+  joined 50000/50000
+Network built: 50000 nodes joined in 41.33 s
+Sending requests (1 request/second per peer)...
+
+================ Results ================
+Nodes                 : 50000
+Requests per node     : 2
+Requests completed    : 100000 (delivered 100000, timed out 0)
+Request phase         : 2.16 s
+log16(N)              : 3.902
+Max hops              : 6
+Hop distribution      : 0:1  1:141  2:2630  3:22973  4:70078  5:4157  6:20
+=========================================
+Average number of hops: 3.7554
+       43.65 real        97.22 user        75.25 sys
+          2488369152  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              176106  page reclaims
+                  22  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+              574753  voluntary context switches
+            10159878  involuntary context switches
+       1647552520177  instructions retired
+        607089600301  cycles elapsed
+          2518485488  peak memory footprint

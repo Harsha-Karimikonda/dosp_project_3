@@ -9,7 +9,7 @@ Pastry: 1000 nodes, 8 requests/node (b=4, |L|=16, |M|=16)
   joined 800/1000
   joined 900/1000
   joined 1000/1000
-Network built: 1000 nodes joined in 0.43 s
+Network built: 1000 nodes joined in 0.42 s
 Sending requests (1 request/second per peer)...
 
 ================ Results ================
@@ -19,7 +19,7 @@ Requests completed    : 8000 (delivered 8000, timed out 0)
 Request phase         : 8.01 s
 log16(N)              : 2.491
 Max hops              : 4
-Hop distribution      : 0:7  1:337  2:3455  3:4199  4:2
+Hop distribution      : 0:8  1:305  2:3417  3:4266  4:4
 Misdelivered (verify) : 0
 =========================================
-Average number of hops: 2.4815
+Average number of hops: 2.4941

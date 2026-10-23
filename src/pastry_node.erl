@@ -84,7 +84,7 @@ handle_call(_, _From, St) ->
     {reply, error, St}.
 
 handle_cast({api_route, Msg, Key}, St) ->
-    {noreply, do_route(Msg, Key, 0, St)};
+    {noreply, do_route(Msg, Key, 0, [], St)};
 handle_cast({api_send, Msg, To}, St) ->
     xmit_direct(To, {direct, Msg}, St),
     {noreply, St};
@@ -102,10 +102,10 @@ handle_info(join_alone, St) ->
 
 handle_info({ack_timeout, Ref}, St = #st{pending = P}) ->
     case maps:take(Ref, P) of
-        {{Msg, Key, Hops, Next, _}, P2} ->
+        {{Msg, Key, Hops, Path, Next, _}, P2} ->
             counter(St, reroutes),
             St2 = node_failed(Next, St#st{pending = P2}),
-            {noreply, do_route(Msg, Key, Hops, St2)};
+            {noreply, do_route(Msg, Key, Hops, Path, St2)};
         error ->
             {noreply, St}
     end;
@@ -191,16 +191,16 @@ p2p(_From, {announce, X = {_, XPid, _}}, St) ->
     St2;
 
 %% ---- Routing --------------------------------------------------------
-p2p(From, {route, Msg, Key, Hops, AckRef}, St) ->
+p2p(From, {route, Msg, Key, Hops, Path, AckRef}, St) ->
     case AckRef of
         none -> ok;
         _ -> xmit(From, {hop_ack, AckRef}, St)
     end,
-    do_route(Msg, Key, Hops, St);
+    do_route(Msg, Key, Hops, Path, St);
 
 p2p(_From, {hop_ack, Ref}, St = #st{pending = P}) ->
     case maps:take(Ref, P) of
-        {{_, _, _, _, TRef}, P2} ->
+        {{_, _, _, _, _, TRef}, P2} ->
             erlang:cancel_timer(TRef),
             St#st{pending = P2};
         error -> St
@@ -257,30 +257,35 @@ join_done(St = #st{ps = PS, main = Main}) ->
     leafs_changed(St#st{join = undefined}).
 
 %% Core routing step. Hops = number of hops travelled so far.
-do_route(_Msg, _Key, Hops, St) when Hops > ?MAX_HOPS ->
+do_route(_Msg, _Key, Hops, _Path, St) when Hops > ?MAX_HOPS ->
     counter(St, dropped),
     St;
-do_route(Msg, Key, Hops, St = #st{ps = PS, app = App, app_st = AS}) ->
+do_route(Msg, Key, Hops, Path, St = #st{ps = PS, app = App, app_st = AS}) ->
+    {SelfId, _, _} = pastry_state:self_node(PS),
+    case lists:member(SelfId, Path) of
+        true -> counter(St, loops);
+        false -> ok
+    end,
     case pastry_state:next_hop(Key, PS) of
         deliver ->
             St#st{app_st = App:deliver(Msg, Key, #{hops => Hops}, AS)};
         {forward, Next} ->
             case App:forward(Msg, Key, Next, AS) of
                 {forward, Msg2, Next2, AS2} ->
-                    forward_route(Next2, Msg2, Key, Hops, St#st{app_st = AS2});
+                    forward_route(Next2, Msg2, Key, Hops, Path, SelfId, St#st{app_st = AS2});
                 {stop, AS2} ->
                     St#st{app_st = AS2}
             end
     end.
 
-forward_route({_, NPid, _}, Msg, Key, Hops, St = #st{reliable = false}) ->
-    xmit(NPid, {route, Msg, Key, Hops + 1, none}, St),
+forward_route({_, NPid, _}, Msg, Key, Hops, Path, SelfId, St = #st{reliable = false}) ->
+    xmit(NPid, {route, Msg, Key, Hops + 1, [SelfId | Path], none}, St),
     St;
-forward_route(Next = {_, NPid, _}, Msg, Key, Hops, St = #st{pending = P}) ->
+forward_route(Next = {_, NPid, _}, Msg, Key, Hops, Path, SelfId, St = #st{pending = P}) ->
     Ref = make_ref(),
     TRef = erlang:send_after(?ACK_TIMEOUT, self(), {ack_timeout, Ref}),
-    xmit(NPid, {route, Msg, Key, Hops + 1, Ref}, St),
-    St#st{pending = P#{Ref => {Msg, Key, Hops, Next, TRef}}}.
+    xmit(NPid, {route, Msg, Key, Hops + 1, [SelfId | Path], Ref}, St),
+    St#st{pending = P#{Ref => {Msg, Key, Hops, Path, Next, TRef}}}.
 
 %% Add nodes learned from peers (skipping recently failed ones).
 add_nodes(Nodes, St = #st{ps = PS, suspects = Sus}) ->

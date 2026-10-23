@@ -19,16 +19,19 @@ Requests per node     : 8
 Requests completed    : 8000 (delivered 8000, timed out 0)
 Request phase         : 8.01 s
 log16(N)              : 2.491
-Max hops              : 4
-Hop distribution      : 0:7  1:335  2:3348  3:4275  4:35
+Max hops              : 5
+Hop distribution      : 0:3  1:361  2:3378  3:4238  4:19  5:1
+Misdelivered (verify) : 0
 ---- failure model ----
 Nodes killed          : 0 (alive 1000)
 Links failed          : 250
-Delivery success      : 100.00 %
-Re-routes (ack t/o)   : 45
-Repairs triggered     : 43
+Delivery success      : 100.00 % (8000/8000 active quota)
+Re-routes (ack t/o)   : 31
+Repairs triggered     : 29
+Routing loops         : 0
 Dropped (hop limit)   : 0
-Gets found/not found  : 2982 / 941
+Gets found/not found  : 2983 / 1000
+Corrupt values (gets) : 0
 Data lost (gets)      : 0
 =========================================
-Average number of hops: 2.4995
+Average number of hops: 2.4890

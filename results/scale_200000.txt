@@ -1,0 +1,27 @@
+Pastry: 200000 nodes, 2 requests/node (b=4, |L|=16, |M|=16)
+  joined 20000/200000
+  joined 40000/200000
+  joined 60000/200000
+  joined 80000/200000
+  joined 100000/200000
+  joined 120000/200000
+  joined 140000/200000
+  joined 160000/200000
+  joined 180000/200000
+  joined 200000/200000
+Network built: 200000 nodes joined in 205.96 s
+Sending requests (1 request/second per peer)...
+
+================ Results ================
+Nodes                 : 200000
+Requests per node     : 2
+Requests completed    : 400000 (delivered 400000, timed out 0)
+Request phase         : 22.59 s
+log16(N)              : 4.402
+Max hops              : 6
+Hop distribution      : 0:2  1:140  2:3676  3:41888  4:195883  5:157616  6:795
+=========================================
+Average number of hops: 4.2738
+      229.00 real       526.35 user       398.30 sys
+          4748132352  maximum resident set size
+

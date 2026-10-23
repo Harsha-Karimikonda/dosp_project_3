@@ -10,12 +10,12 @@ mkdir -p "$OUT"
 
 run() {
   local name=$1; shift
-  echo "=== $name: ./project3 $N $R $* ==="
-  ./project3 "$N" "$R" "$@" | tee "$OUT/$name.txt" | \
-    grep -E "Delivery success|Average number|Data lost|Re-routes|Repairs|Nodes killed|Links failed|Misdelivered"
+  echo "=== $name: ./project3 $N $R --verify $* ==="
+  ./project3 "$N" "$R" --verify "$@" | tee "$OUT/$name.txt" | \
+    grep -E "Delivery success|Average number|Data lost|Corrupt values|Routing loops|Re-routes|Repairs|Nodes killed|Links failed|Misdelivered"
 }
 
-run baseline        --verify
+run baseline
 for k in 5 10 25 50; do
   run "kill_$k"     --kill "$k"
 done

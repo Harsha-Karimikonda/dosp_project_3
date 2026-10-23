@@ -1,0 +1,43 @@
+Pastry: 1000 nodes, 8 requests/node (b=4, |L|=16, |M|=16)
+  joined 100/1000
+  joined 200/1000
+  joined 300/1000
+  joined 400/1000
+  joined 500/1000
+  joined 600/1000
+  joined 700/1000
+  joined 800/1000
+  joined 900/1000
+  joined 1000/1000
+Network built: 1000 nodes joined in 0.44 s
+Sending requests (1 request/second per peer)...
+
+================ Results ================
+Nodes                 : 1000
+Requests per node     : 8
+Requests completed    : 8000 (delivered 8000, timed out 0)
+Request phase         : 8.01 s
+log16(N)              : 2.491
+Max hops              : 4
+Hop distribution      : 0:7  1:306  2:3372  3:4307  4:8
+Misdelivered (verify) : 0
+=========================================
+Average number of hops: 2.5004
+        8.57 real         2.50 user         2.64 sys
+           236929024  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               16928  page reclaims
+                   5  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+               37995  voluntary context switches
+              289849  involuntary context switches
+         34252555690  instructions retired
+         14518745354  cycles elapsed
+           226657144  peak memory footprint
