@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Runs the failure-model experiments used in REPORT.md.
 # usage: tools/resilience.sh [numNodes] [numRequests]
-set -u
+set -euo pipefail
 N=${1:-1000}
-R=${2:-10}
+R=${2:-8}
 cd "$(dirname "$0")/.."
 OUT=results
 mkdir -p "$OUT"

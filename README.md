@@ -1,10 +1,6 @@
-# Project 3 — Pastry Overlay Network & Object Access Service in Erlang
+# Project 3 — Pastry in Erlang
 
-An Erlang actor-model implementation of the **Pastry** peer-to-peer routing substrate and a distributed key–value object access service, following:
-
-> A. Rowstron and P. Druschel, *"Pastry: Scalable, decentralized object location and routing for large-scale peer-to-peer systems,"* Middleware 2001 (`http://rowstron.azurewebsites.net/PAST/pastry.pdf`).
-
----
+An Erlang actor-model implementation of Pastry and a key-to-string object access service, based on [Rowstron and Druschel's Pastry paper](https://rowstron.azurewebsites.net/PAST/pastry.pdf).
 
 ## Team Members
 
@@ -13,105 +9,68 @@ An Erlang actor-model implementation of the **Pastry** peer-to-peer routing subs
 | Harsha Karimikonda | hkarimkonda@ufl.edu | 50966091 |
 | Venkatesh Gollepalli | ve.gollepalli@ufl.edu | 24690032 |
 
----
+## Build and Run
 
-## Building and Running
+Requires Erlang/OTP with `erlc` and `escript` on `PATH` (tested with OTP 29).
 
-### Prerequisites
-- Erlang/OTP (tested on OTP 29; `erlc` and `escript` on `PATH`)
-
-### Build
 ```bash
 make
-```
-This compiles all Erlang modules in `src/` to `ebin/` with zero warnings and packs them into a self-contained executable escript `./project3` configured with `+P 4000000` so the BEAM VM can spawn hundreds of thousands of peer actors.
-
-### Standard Usage
-```bash
 ./project3 numNodes numRequests
 ```
-Example:
+
+For example:
+
 ```bash
 ./project3 1000 10
 ```
-Each of the `numNodes` peers is an independent Erlang `gen_server` actor. Once all peers have joined the Pastry overlay, every peer issues `1` key–value request per second until it has completed `numRequests` requests. When all requests have finished, the program prints the summary statistics and the **average number of hops** traversed per request, then exits.
 
-### Unit Tests
+Each peer sends one request per second until it has issued `numRequests` requests. After the requests finish or time out, the program prints the average number of hops and exits. A local delivery counts as zero hops; the average covers successfully replied requests and excludes replies and maintenance messages.
+
+To run the unit tests:
+
 ```bash
 make test
 ```
 
-### Bonus / Verification Flags
-```bash
-./project3 numNodes numRequests [options]
-```
-| Flag | Description |
-| :--- | :--- |
-| `--verify` | Verify against global ground truth that every delivered message arrived at the live node numerically closest to `Key` (`Misdelivered = 0`). |
-| `--kill P` | **(Bonus)** Crash `P%` of peers at random times during the request phase (`exit(Pid, kill)`). |
-| `--link-fail P` | **(Bonus)** Fail an overlay link on `P%` of peers during the request phase. |
-| `--link-mode temp\|perm` | **(Bonus)** Temporary link failures heal after `1–3 s`; permanent link failures never heal. |
-| `--replicas K` | **(Bonus)** Replicate each stored key onto the `K` numerically closest leaf-set neighbors (default `8` when fault injection is enabled). |
-| `--keys K` | Size of the shared application key space (default `1000`). |
-| `--timeout MS` | Per-request timeout in milliseconds. |
+## What Is Working
 
-To run the full automated bonus resilience benchmark suite:
+- One Erlang `gen_server` actor per peer, communicating through message passing.
+- 128-bit Pastry identifiers, leaf sets, routing tables, and neighborhood sets.
+- Network joins through routed join messages, state transfer, and arrival announcements.
+- Leaf-set routing, prefix-table routing, and fallback routing.
+- A similar API to Section 2.3: initialization, routing, direct sending, and application callbacks for delivery, forwarding, and leaf-set changes.
+- A key-to-string service supporting storage and retrieval.
+- One request per second per peer, request completion tracking, termination, and average-hop output.
+- Bonus node crashes and temporary/permanent connection failures, with rerouting, state repair, and object replication. Testing and findings are in [REPORT.md](REPORT.md).
+
+## Largest Network Managed & Scaling Results
+
+The largest tested network used **200,000 peer actors**, each issuing **2 requests**. All **400,000 requests** were delivered, with an average of **4.2738 hops**. This is a previously recorded run.
+
+| Number of nodes | Requests per node | Requests delivered | Average hops |
+| ---: | ---: | ---: | ---: |
+| 100 | 3 | 300 | 1.6767 |
+| 1,000 | 8 | 8,000 | 2.5004 |
+| 10,000 | 3 | 30,000 | 3.2410 |
+| 25,000 | 2 | 50,000 | 3.5614 |
+| 50,000 | 2 | 100,000 | 3.7554 |
+| 100,000 | 2 | 200,000 | 3.9897 |
+| 200,000 | 2 | 400,000 | 4.2738 |
+
+These scaling experiments can be reproduced with `./tools/scale.sh`.
+
+## Bonus Tests
+
 ```bash
 ./tools/resilience.sh 1000 8
 ```
 
----
+Individual failure models can be run with:
 
-## Architecture & What Is Working
+```bash
+./project3 1000 8 --kill 10
+./project3 1000 8 --link-fail 25 --link-mode temp
+./project3 1000 8 --link-fail 25 --link-mode perm
+```
 
-### 1. Pure Actor Model
-- Every peer is a separate Erlang process (`gen_server` in `src/pastry_node.erl`).
-- All routing, join protocol state transfer, leaf-set maintenance, failure detection, and application requests/replies are performed **exclusively via asynchronous Erlang message passing**. No shared memory (`ets`, `persistent_term`, etc.) or non-actor parallelism is used.
-
-### 2. Pastry Protocol Parameters & State (`include/pastry.hrl`, `src/pastry_id.erl`, `src/pastry_state.erl`)
-- **NodeId & Key space:** 128-bit unsigned integers (`0 .. 2^128 - 1`) generated via MD5 hashing (`erlang:md5/1`), viewed as 32 hexadecimal digits (`b = 4`, base `2^b = 16`).
-- **Leaf Set (`L`):** `|L| = 16` (`8` numerically smaller + `8` numerically larger closest nodes on the `2^128` ring).
-- **Routing Table (`R`):** up to `32` rows × `16` columns; slot `(l, d)` stores a node sharing an `l`-digit prefix with the local `nodeId` whose `(l+1)`-th digit is `d`, preferring closer nodes in the proximity space (Euclidean distance on 2-D coordinates).
-- **Neighborhood Set (`M`):** `|M| = 16` closest nodes according to the proximity metric.
-
-### 3. Network Join (`src/pastry_node.erl`, Section 2.4)
-- A new node `X` contacts a nearby bootstrap node `A` (selected by proximity) and routes a `join_req` message toward `X`'s own `nodeId`.
-- `A` sends `X` its neighborhood set `M`, every intermediate hop `i` sends `X` the routing-table rows `<= shl(X, i)`, and the final node `Z` (numerically closest to `X`) sends `X` its leaf set `L`.
-- `X` initializes its state from the collected tables and announces its arrival (`{announce, X}`) to all members of its `L ∪ R ∪ M`, which update their own state accordingly.
-
-### 4. Pastry Routing & Section 2.3 API (`src/pastry_node.erl`, `src/pastry_app.erl`)
-- Implements the exact 3-branch routing algorithm from Section 2.2 / Table 1 of the paper:
-  1. **Leaf-set range check:** if `Key` falls within `[min(L), max(L)]`, forward to the leaf-set member (or deliver to `self`) numerically closest to `Key`.
-  2. **Prefix routing table lookup:** compute `l = shl(Key, Self)` and forward to `R[l][Key_l]` if present.
-  3. **Rare case fallback:** forward to any node `T ∈ L ∪ R ∪ M` such that `shl(T, Key) >= l` and `dist(T, Key) < dist(Self, Key)`.
-- Exposes the Section 2.3 Pastry API (`pastry_node:start/1` for `pastryInit`, `pastry_node:route/3`, `pastry_node:send/3`) and the application behaviour callbacks (`deliver/4`, `forward/4`, `new_leafs/2` in `src/pastry_app.erl`).
-
-### 5. Key–Value Object Access Service (`src/kv_app.erl`)
-- Implements `pastry_app` to associate 128-bit Pastry keys with strings (`kv_put` stores `(Key, String)` at the numerically closest node; `kv_get` looks up `Key` and replies to the requester).
-- Each peer runs a 1 Hz timer (`erlang:send_after(1000, self(), kv_tick)`) and issues `numRequests` total requests.
-
-### 6. Bonus: Node & Connection Failure Models (`src/pastry_faults.erl`, `src/pastry_node.erl`)
-- **Node crash-stop failures (`--kill P`):** kills `P%` of peer actors during routing.
-- **Temporary & permanent connection failures (`--link-fail P --link-mode temp|perm`):** drops packets along failed peer-to-peer links either for `1–3 s` or permanently.
-- **Resilience mechanisms:** per-hop acknowledgements with `300 ms` timeout and automatic re-routing, leaf-set process monitoring, lazy routing-table repair (`rt_req`/`rt_resp`), proactive leaf-set & neighborhood repair (`leaf_req`/`leaf_resp`, `nbr_req`/`nbr_resp`), direct-send relay fallback around broken direct links, and `K`-way leaf-set object replication with automatic re-replication on `newLeafs`.
-- Full methodology and experimental findings are documented in [`REPORT.md`](REPORT.md).
-
----
-
-## Largest Network Managed & Scaling Results
-
-All experiments below were run on an 8-core Apple Silicon Mac (16 GB RAM, Erlang/OTP 29), and the raw output logs are saved in [`results/scale_*.txt`](results/) (reproducible via `./tools/scale.sh`).
-
-| `numNodes` (`N`) | `numRequests` / node | Total Requests Delivered | Join Time (s) | Theoretical $\log_{16}(N)$ | **Measured Average Hops** | Max Hops | Misdelivered (`--verify`) | Peak Memory (RSS) | Log File |
-| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :--- |
-| `100` | `3` | `300` | `0.03 s` | `1.661` | **`1.6767`** | `3` | `0` | `131 MB` | [`scale_100.txt`](results/scale_100.txt) |
-| `1,000` | `8` | `8,000` | `0.44 s` | `2.491` | **`2.5004`** | `4` | `0` | `237 MB` | [`scale_1000.txt`](results/scale_1000.txt) |
-| `10,000` | `3` | `30,000` | `6.53 s` | `3.322` | **`3.2410`** | `5` | `0` | `1.10 GB` | [`scale_10000.txt`](results/scale_10000.txt) |
-| `25,000` | `2` | `50,000` | `18.93 s` | `3.652` | **`3.5614`** | `5` | — | `1.49 GB` | [`scale_25000.txt`](results/scale_25000.txt) |
-| `50,000` | `2` | `100,000` | `41.33 s` | `3.902` | **`3.7554`** | `6` | — | `2.49 GB` | [`scale_50000.txt`](results/scale_50000.txt) |
-| `100,000` | `2` | `200,000` | `90.45 s` | `4.152` | **`3.9897`** | `6` | — | `4.34 GB` | [`scale_100000.txt`](results/scale_100000.txt) |
-| **`200,000`** | `2` | **`400,000`** | `205.96 s` | `4.402` | **`4.2738`** | `6` | — | `4.75 GB` | [`scale_200000.txt`](results/scale_200000.txt) |
-
-- **Largest network tested:** **`200,000` concurrent peer actors** routing **`400,000` requests** with **100% delivery (0 timeouts)** and an average of **`4.2738` hops** (closely matching the theoretical $\log_{16}(200{,}000) \approx 4.402$).
-- Across all verified networks (`N = 2` up to `N = 10,000`), **`Misdelivered = 0`** — every single request landed at the exact live node numerically closest to the key on the $2^{128}$ ring.
-
+`--kill P` crashes `P%` of peers. `--link-fail P` schedules a connection failure on `P%` of peers. Temporary failures heal after 1–3 seconds; permanent failures remain for the run.
